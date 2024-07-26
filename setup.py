@@ -11,7 +11,7 @@ OPTIONS = {
     'iconfile': 'images/icon.png',
     'plist':{
         'CFBundleName': 'Swamp Ash MP3 Converter',
-        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleShortVersionString': '1.0.2',
         'CFBundleExecutable': 'Swamp Ash MP3 Converter'
     }
 }

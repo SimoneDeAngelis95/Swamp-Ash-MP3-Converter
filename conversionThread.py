@@ -34,7 +34,7 @@ class ConversionThread(QThread):
         outPath += ".mp3"
 
         try:
-            bitRate = self.bitRate[:3]
+            bitRate = self.bitRate[:3] + "k"
 
             cmd = [
                 GB._FFMPEG_PATH_,

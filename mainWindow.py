@@ -197,7 +197,7 @@ class mainWindow(QWidget):
         self.uploading = False
 
     def __slot__chooseFilesAndAdd(self):
-        choosen_files, _ = QFileDialog().getOpenFileNames(filter=GB._FILE_ALLOWED_) # in python si usa una variabile con il nome "_" per indicare una variabile dove buttare la roba, gli scarti, cose che non ci interessano. In questo caso ad esempio ci buttiamo i filtri dei file che a noi non interessano
+        choosen_files, _ = QFileDialog().getOpenFileNames(filter=GB._FILE_ALLOWED_, directory=GB._DEFAULT_EXPORT_PATH_) # in python si usa una variabile con il nome "_" per indicare una variabile dove buttare la roba, gli scarti, cose che non ci interessano. In questo caso ad esempio ci buttiamo i filtri dei file che a noi non interessano
 
         if(len(choosen_files) > 0):
             loadThread = FileLoadThread(self, choosen_files, self.tbl_fileList.rowCount())
@@ -215,7 +215,7 @@ class mainWindow(QWidget):
             
     def __slot__openChoosePathDialog(self):
         last_path = self.entry_destinationPath.text()
-        new_path = QFileDialog().getExistingDirectory()
+        new_path = QFileDialog().getExistingDirectory(directory=last_path)
 
         if(new_path != ""):
             self.entry_destinationPath.setText(new_path)

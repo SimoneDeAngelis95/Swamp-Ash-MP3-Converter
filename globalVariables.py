@@ -24,7 +24,7 @@ _HIDDENTAGS_ = 9
 _REMOVE_BTN_IMG_PATH_ = "./remove.png" # Compiled Version
 
 _SAMPLERATE_LIST_ = ["44100", "48000"]
-_BITRATE_LIST_ = ["320", "256", "224", "192", "160", "128", "112", "96", "80", "64", "56", "48", "40", "32", "24", "20", "18", "16"]
+_BITRATE_LIST_ = ["320", "256", "224", "192", "160", "128", "112", "96", "80", "64", "56", "48", "40", "32"]
 
 _FILE_ALLOWED_ = "Audio Files (*.wav *.mp3 *.aac *.wma *.3gpp)"
 
