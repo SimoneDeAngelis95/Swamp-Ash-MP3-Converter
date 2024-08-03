@@ -11,8 +11,10 @@ OPTIONS = {
     'iconfile': 'images/icon.png',
     'plist':{
         'CFBundleName': 'Swamp Ash MP3 Converter',
-        'CFBundleShortVersionString': '1.0.2',
-        'CFBundleExecutable': 'Swamp Ash MP3 Converter'
+        'CFBundleShortVersionString': '1.0.3',
+        'CFBundleExecutable': 'Swamp Ash MP3 Converter',
+        'CFBundleAuthor': 'Simone De Angelis',
+        'CFBundleCopyright': 'Simone De Angelis'
     }
 }
 

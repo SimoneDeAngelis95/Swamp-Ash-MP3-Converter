@@ -2,6 +2,7 @@ from PyQt6.QtCore import QThread
 from PyQt6.QtCore import pyqtSignal
 import globalVariables as GB
 import subprocess
+import platform
 import os
 import json
 
@@ -35,14 +36,13 @@ class ConversionThread(QThread):
 
         try:
             bitRate = self.bitRate[:3] + "k"
-
             cmd = [
                 GB._FFMPEG_PATH_,
                 "-i", self.filePath,
                 "-ar", self.fc,
                 "-b:a", bitRate,
                 "-metadata", "title=" + self.tags["title"],
-                "-metadata", "tracknumber=" + self.tags["number"],
+                "-metadata", "track=" + self.tags["number"],
                 "-metadata", "artist=" + self.tags["artist"],
                 "-metadata", "album=" + self.tags["album"],
                 "-metadata", "Date=" + self.tags["year"],
@@ -50,8 +50,10 @@ class ConversionThread(QThread):
                 outPath
             ]
 
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            #_ = process.communicate() # devo catturare comunque l'output altrimenti si blocca, ma a quanto pare no
+            if platform.system() == 'Darwin' or platform.system() == 'Linux':
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            elif platform.system() == 'Windows':
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW) # creationflags=subprocess.CREATE_NO_WINDOW indispensabile per non far apparire la finestra di terminale su windows. Su macOS non è obbligatorio
             
             while process.poll() is None:
                 if self.stop == True:

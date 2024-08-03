@@ -1,10 +1,12 @@
 from PyQt6.QtCore import QThread
 from PyQt6.QtCore import pyqtSignal
+from mutagen.easyid3 import EasyID3
+from mutagen.mp3 import MP3
 import pathlib
 import json
 import re
-import taglib
-from pydub import AudioSegment
+#from pydub import AudioSegment
+from audioFileDuration import get_duration
 import globalVariables as GB
 
 class FileLoadThread(QThread):
@@ -26,16 +28,7 @@ class FileLoadThread(QThread):
             self.data.emit(current_row, GB._TITLECOLUMN_, title)
 
             # LENGTH
-            mySong = AudioSegment.from_file(file)
-            duration_ms = len(mySong)
-            duration_seconds = duration_ms / 1000
-            minutes = int(duration_seconds // 60) # In questa riga, stiamo calcolando i minuti dalla durata in secondi. L'operatore // esegue una divisione intera, il che significa che divide duration_seconds per 60 e restituisce la parte intera del risultato, che rappresenta i minuti.
-            seconds = int(duration_seconds % 60)  # In questa riga, stiamo calcolando i secondi dalla durata in secondi. L'operatore % calcola il resto della divisione, quindi duration_seconds % 60 restituirà i secondi rimanenti dopo aver estratto i minuti.
-            if(minutes < 10):
-                minutes = "0" + str(minutes)
-            if(seconds < 10):
-                seconds = "0" + str(seconds)
-            time_string = str(minutes) + ":" + str(seconds)
+            time_string = get_duration(file)
             self.data.emit(current_row, GB._LENGTHCOLUMN_, time_string)
 
             # FORMAT
@@ -48,45 +41,25 @@ class FileLoadThread(QThread):
             self.data.emit(current_row, GB._ORIGINALPATH_, file)
 
             # HIDDEN TAGS
+            tags = {"title": title, "number": "", "artist": "", "album": "", "year": "", "genre": ""}
+            
             if(format != "mp3"):
-                tags = {"title": title, "number": "", "artist": "", "album": "", "year": "", "genre": ""}
                 if re.match(r'^\d{2}\s', tags["title"]): # se i primi due caratteri di tags["title"] sono numeri seguiti da uno spazio bianco
                     tags["number"] = tags["title"][:2]   # prendo i primi due caratteri della stringa tags["title"]
             else:
-                tag_title = ""
-                tag_number = ""
-                tag_artist = ""
-                tag_album = ""
-                tag_year = ""
-                tag_genre = ""
 
-                song = taglib.File(file)
-                try:
-                    tag_title = ", ".join(song.tags["TITLE"]) # siccome song.tags[...] restituisce una lista di elementi e li unisco in una lista separati da ", "
-                except:
-                    pass
-                try:
-                    tag_number = ", ".join(song.tags["TRACKNUMBER"])
-                except:
-                    pass
-                try:
-                    tag_artist = ", ".join(song.tags["ARTIST"])
-                except:
-                    pass
-                try:
-                    tag_album = ", ".join(song.tags["ALBUM"])
-                except:
-                    pass
-                try:
-                    tag_year = song.tags["DATE"][0] # altrimenti mi restituisce due date
-                except:
-                    pass
-                try:
-                    tag_genre = ", ".join(song.tags["GENRE"])
-                except:
-                    pass
+                #MUTAGEN VERSION OF GETTING TAGS FROM MP3
+                audio = MP3(file, ID3=EasyID3)
+                tagTitle = ", ".join(audio.get("title", [""]))  # Recupera il tag "title"
 
-                tags = {"title": tag_title, "number": tag_number, "artist": tag_artist, "album": tag_album, "year": tag_year, "genre": tag_genre}
+                if tagTitle != "":
+                    tags["title"] = tagTitle
+
+                tags["number"] = ", ".join(audio.get("tracknumber", [""]))  # Recupera il tag "tracknumber"
+                tags["artist"] = ", ".join(audio.get("artist", [""]))  # Recupera il tag "artist"
+                tags["album"] = ", ".join(audio.get("album", [""]))  # Recupera il tag "album"
+                tags["year"] = ", ".join(audio.get("date", [""]))  # Recupera il tag "date"
+                tags["genre"] = ", ".join(audio.get("genre", [""]))  # Recupera il tag "genre"
 
             json_tags = json.dumps(tags)
             self.data.emit(current_row, GB._HIDDENTAGS_, json_tags)
