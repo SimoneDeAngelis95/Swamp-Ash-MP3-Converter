@@ -33,7 +33,7 @@ class FileLoadThread(QThread):
 
             # FORMAT
             format = pathlib.Path(file).suffix # grazie alla libreria pathlib ottengo l'estensione del file
-            format = format.split(".")
+            format = format.split(".")         # splitto la stringa per ottenere solo l'estensione
             format = format[1]
             self.data.emit(current_row, GB._ORIGINALFORMAT_, format)
 

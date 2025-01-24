@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QFileDialog
 from PyQt6.QtWidgets import QComboBox
 from PyQt6.QtWidgets import QProgressBar
+from PyQt6.QtGui import QDragEnterEvent
+from PyQt6.QtGui import QDropEvent
 from PyQt6.QtGui import QBrush
 from PyQt6.QtGui import QIcon
 from PyQt6.QtGui import QColor
@@ -14,6 +16,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtCore import pyqtSignal
 from editTagsWindow import EditTagsWindow
 import json
+import os
 import globalVariables as GB
 from fileLoadThread import FileLoadThread
 from conversionThread import ConversionThread
@@ -135,6 +138,30 @@ class mainWindow(QWidget):
         self.tagWin.updateTags.connect(self.__slot__updateTags)
         self.tagWin.updateTagsForAll.connect(self.__slot__updateTagsForAll)
 
+        # ===== DRAG AND DROP =====
+        self.setAcceptDrops(True)
+
+    # ====== DRAG & DROP ======
+    def dragEnterEvent(self, event: QDragEnterEvent):          # evento che un file (o cartella) è trascinato sul widget ma non ancora rilasciato
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):                    # il file (o cartella) è stato rilasciato
+        paths = event.mimeData().urls()
+        list_file_path = []
+
+        for path in paths:
+            file_path = path.toLocalFile()
+            file_extension = os.path.splitext(file_path)[1].lower()
+            if not file_extension in GB._ALLOWED_EXTENSIONS_:
+                pass
+            else:
+                list_file_path.append(file_path)
+        
+        self.startThreadForAddingSongToList(list_file_path)
+
     # ===== SLOTS =====
     def __slot__addToTable(self, row, column, data):
         if(row >= self.tbl_fileList.rowCount()):
@@ -198,20 +225,7 @@ class mainWindow(QWidget):
 
     def __slot__chooseFilesAndAdd(self):
         choosen_files, _ = QFileDialog().getOpenFileNames(filter=GB._FILE_ALLOWED_, directory=GB._DEFAULT_EXPORT_PATH_) # in python si usa una variabile con il nome "_" per indicare una variabile dove buttare la roba, gli scarti, cose che non ci interessano. In questo caso ad esempio ci buttiamo i filtri dei file che a noi non interessano
-
-        if(len(choosen_files) > 0):
-            loadThread = FileLoadThread(self, choosen_files, self.tbl_fileList.rowCount())
-            loadThread.data.connect(self.__slot__addToTable)
-            loadThread.finished.connect(self.__slot__addFilesFinished)
-            loadThread.start()
-
-            self.uploading = True
-            self.progressBar.show()
-            self.tbl_fileList.setDisabled(True)
-            self.btn_addFile.setDisabled(True)
-            self.btn_clearList.setDisabled(True)
-            self.btn_convert.setDisabled(True)
-            self.btn_destinationPath.setDisabled(True)
+        self.startThreadForAddingSongToList(choosen_files)
             
     def __slot__openChoosePathDialog(self):
         last_path = self.entry_destinationPath.text()
@@ -393,6 +407,23 @@ class mainWindow(QWidget):
     # funzione che interrompe il thread
     def __slot__stopConversion(self):
         self.stopConversionSignal.emit()
+
+    # avvia il thread per caricare i file nella tabella
+    def startThreadForAddingSongToList(self, file_list):
+        if len(file_list) > 0:
+            loadThread = FileLoadThread(self, file_list, self.tbl_fileList.rowCount()) # il thread si aspetta una lista ed io gli do una lista
+            loadThread.data.connect(self.__slot__addToTable)
+            loadThread.finished.connect(self.__slot__addFilesFinished)
+            loadThread.start()
+
+            self.uploading = True
+            self.progressBar.show()
+            self.tbl_fileList.setDisabled(True)
+            self.btn_addFile.setDisabled(True)
+            self.btn_clearList.setDisabled(True)
+            self.btn_convert.setDisabled(True)
+            self.btn_destinationPath.setDisabled(True)
+
 
     # FUTURE RELEASE
     #def __slot__clearQueue(self):
