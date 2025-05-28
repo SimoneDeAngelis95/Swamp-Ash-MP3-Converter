@@ -23,7 +23,7 @@ class ConversionThread(QThread):
 
     def run(self):
 
-        # GESTIRE CONFLITTI NOME
+        # Manage output path and filename
         outPath = self.outputPath + "/" + self.title
         if os.path.exists(outPath + ".mp3"):
             index = 0
@@ -53,7 +53,7 @@ class ConversionThread(QThread):
             if platform.system() == 'Darwin' or platform.system() == 'Linux':
                 process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             elif platform.system() == 'Windows':
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW) # creationflags=subprocess.CREATE_NO_WINDOW indispensabile per non far apparire la finestra di terminale su windows. Su macOS non è obbligatorio
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW) # creationflags=subprocess.CREATE_NO_WINDOW needed to avoid opening a console window on Windows, not needed on Linux or MacOS
             
             while process.poll() is None:
                 if self.stop == True:
@@ -64,8 +64,7 @@ class ConversionThread(QThread):
             
             if self.stop == False:
                 self.result.emit(True)
-            # in caso di errore nel subprocess esso verrà gestito dal try/except e quindi automaticamente emetterà falso, fidati, l'ho testato
-        except:
+        except:                               # in case of error in subprocess execution, we catch the exception
             self.result.emit(False)
 
         self.finished.emit()

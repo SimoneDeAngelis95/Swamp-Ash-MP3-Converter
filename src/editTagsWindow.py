@@ -12,8 +12,8 @@ _WIN_WIDTH_ = 400
 _WIN_HEIGHT_ = 200
 
 class EditTagsWindow(QWidget):
-    updateTags = pyqtSignal(int, str) # i segnali vanno sempre definiti fuori dall'init, in questo caso invio l'indice della riga e la stringa con i tag aggiornati
-    updateTagsForAll = pyqtSignal(str, str)
+    updateTags = pyqtSignal(int, str)                 # the signal will emit the index of the row and the json string with the tags
+    updateTagsForAll = pyqtSignal(str, str)           # the signal will emit the tag name and the value to set for all rows
 
     def __init__(self):
         super().__init__()
@@ -123,7 +123,7 @@ class EditTagsWindow(QWidget):
 
     def init(self, tagString, x, y, indexSender):
 
-        self.indexSender = indexSender # indice della riga che ha chiamato la funzione
+        self.indexSender = indexSender # index of the sender row in the table
 
         self.setGeometry(x, y, _WIN_WIDTH_, _WIN_HEIGHT_)
 

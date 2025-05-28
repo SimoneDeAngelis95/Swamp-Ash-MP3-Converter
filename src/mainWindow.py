@@ -27,10 +27,10 @@ class mainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.uploading = False # variabile che è True durante la fase di caricamento dei file ed è False normalmente
+        self.uploading = False # variable to check if the user is uploading files or not
         
         self.setGeometry(0, 0, 900, 600)
-        self.setWindowTitle(GB._APP_NAME_)
+        self.setWindowTitle(GB._APP_NAME_ + " " + GB._APP_VERSION_)
 
         # ====== ADD FILE BTN ======
         self.btn_addFile = QPushButton(self, text="add file")
@@ -142,13 +142,13 @@ class mainWindow(QWidget):
         self.setAcceptDrops(True)
 
     # ====== DRAG & DROP ======
-    def dragEnterEvent(self, event: QDragEnterEvent):          # evento che un file (o cartella) è trascinato sul widget ma non ancora rilasciato
+    def dragEnterEvent(self, event: QDragEnterEvent):          # event that is called when a file (or folder) is dragged over the widget but not yet released
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
 
-    def dropEvent(self, event: QDropEvent):                    # il file (o cartella) è stato rilasciato
+    def dropEvent(self, event: QDropEvent):                    # the event that is called when a file (or folder) is dropped on the widget
         paths = event.mimeData().urls()
         list_file_path = []
 
@@ -171,7 +171,7 @@ class mainWindow(QWidget):
             self.tbl_fileList.setCellWidget(row, GB._REMOVECOLUMN_, QPushButton())
             self.tbl_fileList.cellWidget(row, GB._REMOVECOLUMN_).setIcon(QIcon(GB._REMOVE_BTN_IMG_PATH_))
             self.tbl_fileList.cellWidget(row, GB._REMOVECOLUMN_).clicked.connect(self.__slot__removeAction)
-            self.tbl_fileList.cellWidget(row, GB._REMOVECOLUMN_).clicked.connect(self.__slot__resizeTableAndCheckButtons) # entrambi gli slot sono connessi
+            self.tbl_fileList.cellWidget(row, GB._REMOVECOLUMN_).clicked.connect(self.__slot__resizeTableAndCheckButtons) # both the remove button and the resizeTableAndCheckButtons slot are connected to the same signal, so when the button is clicked, both actions are performed
 
             # SAMPLE RATE
             self.tbl_fileList.setCellWidget(row, GB._SAMPLERATE_, QComboBox())
@@ -224,7 +224,7 @@ class mainWindow(QWidget):
         self.uploading = False
 
     def __slot__chooseFilesAndAdd(self):
-        choosen_files, _ = QFileDialog().getOpenFileNames(filter=GB._FILE_ALLOWED_, directory=GB._DEFAULT_EXPORT_PATH_) # in python si usa una variabile con il nome "_" per indicare una variabile dove buttare la roba, gli scarti, cose che non ci interessano. In questo caso ad esempio ci buttiamo i filtri dei file che a noi non interessano
+        choosen_files, _ = QFileDialog().getOpenFileNames(filter=GB._FILE_ALLOWED_, directory=GB._DEFAULT_EXPORT_PATH_)
         self.startThreadForAddingSongToList(choosen_files)
             
     def __slot__openChoosePathDialog(self):
@@ -276,7 +276,7 @@ class mainWindow(QWidget):
             if(self.tbl_fileList.cellWidget(index, GB._EDITTAGS_) == buttonSender):
                 break
 
-        # estraggo le coordinate della mainWindow per posizionare la editTagsWindow di conseguenza
+        # get the position of the main window to place the tag window
         mainWinPos = self.mapToGlobal(self.pos())
         x = mainWinPos.x()
         y = mainWinPos.y()
@@ -369,7 +369,7 @@ class mainWindow(QWidget):
         else:
             self.conversionFinished()
 
-    # funzione chiamata dal thread interrotto
+    # function that is called when the conversion is stopped
     def __slot__conversionStopped(self):
         # NON SI FERMA!
         for row in range(self.tbl_conversion.rowCount()):
@@ -404,14 +404,14 @@ class mainWindow(QWidget):
         self.btn_done.hide()
         self.conversionIndex = 0
 
-    # funzione che interrompe il thread
+    # function that is called when the stop conversion button is clicked
     def __slot__stopConversion(self):
         self.stopConversionSignal.emit()
 
-    # avvia il thread per caricare i file nella tabella
+    # start a thread to add the files to the table
     def startThreadForAddingSongToList(self, file_list):
         if len(file_list) > 0:
-            loadThread = FileLoadThread(self, file_list, self.tbl_fileList.rowCount()) # il thread si aspetta una lista ed io gli do una lista
+            loadThread = FileLoadThread(self, file_list, self.tbl_fileList.rowCount())
             loadThread.data.connect(self.__slot__addToTable)
             loadThread.finished.connect(self.__slot__addFilesFinished)
             loadThread.start()
