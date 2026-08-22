@@ -7,27 +7,63 @@ from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QFileDialog
 from PyQt6.QtWidgets import QComboBox
 from PyQt6.QtWidgets import QProgressBar
+from PyQt6.QtWidgets import QProgressDialog
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QDragEnterEvent
 from PyQt6.QtGui import QDropEvent
 from PyQt6.QtGui import QBrush
 from PyQt6.QtGui import QIcon
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QTimer
 from editTagsWindow import EditTagsWindow
 import json
 import os
+import platform
 import globalVariables as GB
 from fileLoadThread import FileLoadThread
 from conversionThread import ConversionThread
+from uppieThread import UpdateCheckThread
+from uppieThread import UpdateInstallThread
+
+_UPDATE_AVAILABLE_TITLE = "Update available"
+_UPDATE_AVAILABLE_TEXT = "Version {version} of {app_name} is available."
+_UPDATE_AVAILABLE_QUESTION = "Would you like to download it and start the installation?"
+_UPDATE_ACCEPT = "Download and install"
+_UPDATE_LATER = "Later"
+_UPDATE_PROGRESS_TITLE = "Update"
+_UPDATE_PROGRESS_TEXT = "Downloading the update..."
+_UPDATE_SUCCESS_TITLE = "Update downloaded"
+_UPDATE_SUCCESS_MACOS = "The DMG has been opened. Close the application and drag it into the Applications folder to complete the update."
+_UPDATE_SUCCESS_WINDOWS = "The installer has been started. Swamp Ash MP3 Converter will now close."
+_UPDATE_ERROR_TITLE = "Update failed"
+_UPDATE_ERROR_TEXT = "The update could not be downloaded or started. Please try again later."
+_UPDATE_RUNNING_TITLE = "Update in progress"
+_UPDATE_RUNNING_TEXT = "Please wait for the download to finish before closing the application."
+_INVALID_FILE_TITLE = "Invalid audio file"
+_INVALID_FILE_TEXT = "The selected file could not be read:\n{file_name}"
+_INVALID_TITLE_TITLE = "Invalid file name"
+_INVALID_TITLE_TEXT = "The output name contains characters that are not allowed:\n{file_name}"
 
 class mainWindow(QWidget):
-    stopConversionSignal = pyqtSignal()
-
     def __init__(self):
         super().__init__()
 
         self.uploading = False # variable to check if the user is uploading files or not
+        self.converting = False
+        self.loadThread = None
+        self.conversionThread = None
+        self.startNextConversionAfterThread = False
+        self.closeRequested = False
+        self.pendingUpdater = None
+        self.pendingUpdateVersion = ""
+        self.updateCheckThread = None
+        self.updateInstallThread = None
+        self.updateProgressDialog = None
+        self.updateProgressTimer = QTimer(self)
+        self.updateProgressTimer.setInterval(200)
+        self.updateProgressTimer.timeout.connect(self.refreshUpdateProgress)
         
         self.setGeometry(0, 0, 900, 600)
         self.setWindowTitle(GB._APP_NAME_ + " " + GB._APP_VERSION_)
@@ -140,6 +176,108 @@ class mainWindow(QWidget):
 
         # ===== DRAG AND DROP =====
         self.setAcceptDrops(True)
+        QTimer.singleShot(1000, self.checkForUpdates)
+
+    # ===== APPLICATION UPDATE =====
+    def checkForUpdates(self):
+        if self.updateCheckThread is not None:
+            return
+
+        self.updateCheckThread = UpdateCheckThread(self)
+        self.updateCheckThread.finished.connect(self.updateCheckThreadFinished)
+        self.updateCheckThread.finished.connect(self.updateCheckThread.deleteLater)
+        self.updateCheckThread.start()
+
+    def updateCheckThreadFinished(self):
+        updater = self.updateCheckThread.updater
+        updateAvailable = self.updateCheckThread.update_available
+        remoteVersion = self.updateCheckThread.remote_version
+        self.updateCheckThread = None
+
+        if self.closeRequested:
+            QTimer.singleShot(0, self.close)
+            return
+
+        if not updateAvailable:
+            return
+
+        if self.uploading or self.converting:
+            self.pendingUpdater = updater
+            self.pendingUpdateVersion = remoteVersion
+            return
+
+        self.showUpdateAvailable(updater, remoteVersion)
+
+    def showUpdateAvailable(self, updater, remoteVersion):
+        msgBox = QMessageBox(self)
+        msgBox.setWindowTitle(_UPDATE_AVAILABLE_TITLE)
+        if remoteVersion:
+            msgBox.setText(_UPDATE_AVAILABLE_TEXT.format(version=remoteVersion, app_name=GB._APP_NAME_))
+        else:
+            msgBox.setText(f"A newer version of {GB._APP_NAME_} is available.")
+        msgBox.setInformativeText(_UPDATE_AVAILABLE_QUESTION)
+        installButton = msgBox.addButton(_UPDATE_ACCEPT, QMessageBox.ButtonRole.AcceptRole)
+        msgBox.addButton(_UPDATE_LATER, QMessageBox.ButtonRole.RejectRole)
+        msgBox.exec()
+
+        if msgBox.clickedButton() == installButton:
+            self.startUpdate(updater)
+
+    def startUpdate(self, updater):
+        self.updateProgressDialog = QProgressDialog(
+            _UPDATE_PROGRESS_TEXT,
+            "",
+            0,
+            100,
+            self,
+        )
+        self.updateProgressDialog.setWindowTitle(_UPDATE_PROGRESS_TITLE)
+        self.updateProgressDialog.setCancelButton(None)
+        self.updateProgressDialog.setAutoClose(False)
+        self.updateProgressDialog.setAutoReset(False)
+        self.updateProgressDialog.setMinimumDuration(0)
+        self.updateProgressDialog.setValue(0)
+
+        self.updateInstallThread = UpdateInstallThread(updater, self)
+        self.updateInstallThread.finished.connect(self.updateInstallFinished)
+        self.updateInstallThread.finished.connect(self.updateInstallThread.deleteLater)
+        self.updateProgressTimer.start()
+        self.updateInstallThread.start()
+
+    def refreshUpdateProgress(self):
+        if self.updateInstallThread is None or self.updateProgressDialog is None:
+            return
+        self.updateProgressDialog.setValue(
+            self.updateInstallThread.updater.get_progress_percentage()
+        )
+
+    def updateInstallFinished(self):
+        success = self.updateInstallThread.success
+        self.updateProgressTimer.stop()
+        if self.updateProgressDialog is not None:
+            self.updateProgressDialog.close()
+            self.updateProgressDialog = None
+        self.updateInstallThread = None
+
+        if not success:
+            QMessageBox.warning(self, _UPDATE_ERROR_TITLE, _UPDATE_ERROR_TEXT)
+            return
+
+        if platform.system() == "Windows":
+            QMessageBox.information(self, _UPDATE_SUCCESS_TITLE, _UPDATE_SUCCESS_WINDOWS)
+            QApplication.quit()
+        elif platform.system() == "Darwin":
+            QMessageBox.information(self, _UPDATE_SUCCESS_TITLE, _UPDATE_SUCCESS_MACOS)
+
+    def showPendingUpdate(self):
+        if self.uploading or self.converting or self.pendingUpdater is None:
+            return
+
+        updater = self.pendingUpdater
+        remoteVersion = self.pendingUpdateVersion
+        self.pendingUpdater = None
+        self.pendingUpdateVersion = ""
+        self.showUpdateAvailable(updater, remoteVersion)
 
     # ====== DRAG & DROP ======
     def dragEnterEvent(self, event: QDragEnterEvent):          # event that is called when a file (or folder) is dragged over the widget but not yet released
@@ -198,7 +336,9 @@ class mainWindow(QWidget):
         self.tbl_fileList.setItem(row, column, QTableWidgetItem(data))
 
         if(column != GB._TITLECOLUMN_):
-            self.tbl_fileList.item(row, column).setFlags(Qt.ItemFlag.ItemIsEditable)
+            self.tbl_fileList.item(row, column).setFlags(
+                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            )
 
         
         self.tbl_fileList.resizeColumnsToContents()
@@ -222,6 +362,21 @@ class mainWindow(QWidget):
 
         self.progressBar.hide()
         self.uploading = False
+        QTimer.singleShot(0, self.showPendingUpdate)
+
+    def __slot__invalidFile(self, filePath):
+        QMessageBox.warning(
+            self,
+            _INVALID_FILE_TITLE,
+            _INVALID_FILE_TEXT.format(file_name=os.path.basename(filePath)),
+        )
+
+    def __slot__loadThreadFinished(self, finishedThread):
+        if self.loadThread is finishedThread:
+            self.loadThread = None
+
+        if self.closeRequested:
+            QTimer.singleShot(0, self.close)
 
     def __slot__chooseFilesAndAdd(self):
         choosen_files, _ = QFileDialog().getOpenFileNames(filter=GB._FILE_ALLOWED_, directory=GB._DEFAULT_EXPORT_PATH_)
@@ -302,89 +457,148 @@ class mainWindow(QWidget):
 
     # ===== EVENTI =====
     def closeEvent(self, event):
+        if self.updateCheckThread is not None:
+            self.closeRequested = True
+            self.hide()
+            event.ignore()
+            return
+        if self.updateInstallThread is not None:
+            QMessageBox.information(self, _UPDATE_RUNNING_TITLE, _UPDATE_RUNNING_TEXT)
+            event.ignore()
+            return
+        if self.loadThread is not None and self.loadThread.isRunning():
+            self.closeRequested = True
+            self.hide()
+            self.loadThread.cancel()
+            event.ignore()
+            return
+        if self.conversionThread is not None and self.conversionThread.isRunning():
+            self.closeRequested = True
+            self.hide()
+            self.conversionThread.cancel()
+            QTimer.singleShot(2000, self.__slot__forceStopConversion)
+            event.ignore()
+            return
         self.tagWin.close()
-        self.stopConversionSignal.emit()
+        event.accept()
 
     # ===== CONVERSIONS SLOTS =====
     def __slot__startConversion(self):
-        if(self.tbl_fileList.rowCount() > 0):
-            self.btn_addFile.setDisabled(True)
-            self.btn_clearList.setDisabled(True)
-            self.btn_convert.setDisabled(True)
-            self.btn_destinationPath.setDisabled(True)
-            self.tbl_fileList.hide()
+        if self.tbl_fileList.rowCount() == 0:
+            return
 
-            self.btn_stopConversion.show()
-            #self.btn_clearQueue.show()
-            self.btn_done.setDisabled(True)
-            
-            self.tbl_conversion.show()
+        invalidCharacters = set('<>:"/\\|?*')
+        for row in range(self.tbl_fileList.rowCount()):
+            title = self.tbl_fileList.item(row, GB._TITLECOLUMN_).text().strip()
+            if not title or title in (".", "..") or any(char in invalidCharacters for char in title):
+                self.tbl_fileList.selectRow(row)
+                QMessageBox.warning(
+                    self,
+                    _INVALID_TITLE_TITLE,
+                    _INVALID_TITLE_TEXT.format(file_name=title or "(empty)"),
+                )
+                return
 
-            for row in range(self.tbl_fileList.rowCount()):
-                self.tbl_conversion.insertRow(row)
-                title = self.tbl_fileList.item(row, GB._TITLECOLUMN_).text() + ".mp3"
-                self.tbl_conversion.setItem(row, 0, QTableWidgetItem(title))
-                self.tbl_conversion.item(row, 0).setFlags(Qt.ItemFlag.ItemIsEditable)
-                self.tbl_conversion.item(row, 0).setForeground(QBrush(QColor(0, 0, 0)))
+        self.converting = True
+        self.startNextConversionAfterThread = False
+        self.btn_addFile.setDisabled(True)
+        self.btn_clearList.setDisabled(True)
+        self.btn_convert.setDisabled(True)
+        self.btn_destinationPath.setDisabled(True)
+        self.tbl_fileList.hide()
 
-                conversionInProgress = QProgressBar()
-                conversionInProgress.setMaximum(0)
-                conversionInProgress.setMinimum(0)
-                conversionInProgress.setValue(0)
+        self.btn_stopConversion.setDisabled(False)
+        self.btn_stopConversion.show()
+        self.btn_done.setDisabled(True)
+        self.tbl_conversion.show()
 
-                self.tbl_conversion.setCellWidget(row, 1, conversionInProgress)
-                self.tbl_conversion.resizeColumnsToContents()
-    
-            self.conversionIndex = 0
-            self.sendNextItemToConversion()
+        for row in range(self.tbl_fileList.rowCount()):
+            self.tbl_conversion.insertRow(row)
+            title = self.tbl_fileList.item(row, GB._TITLECOLUMN_).text().strip() + ".mp3"
+            self.tbl_conversion.setItem(row, 0, QTableWidgetItem(title))
+            self.tbl_conversion.item(row, 0).setFlags(
+                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            )
+            self.tbl_conversion.item(row, 0).setForeground(QBrush(QColor(0, 0, 0)))
 
-    def __slot__updateConversionProgress(self, result):
+            conversionInProgress = QProgressBar()
+            conversionInProgress.setMaximum(0)
+            conversionInProgress.setMinimum(0)
+            conversionInProgress.setValue(0)
+            self.tbl_conversion.setCellWidget(row, 1, conversionInProgress)
+
+        self.tbl_conversion.resizeColumnsToContents()
+        self.conversionIndex = 0
+        self.sendNextItemToConversion()
+
+    def __slot__updateConversionProgress(self, result, wasCancelled):
         self.tbl_conversion.removeCellWidget(self.conversionIndex, 1)
-        if result:
+        if wasCancelled:
+            strResult = "Stopped"
+        elif result:
             strResult = "Done!"
         else:
             strResult = "Error!"
-        
+
         self.tbl_conversion.setItem(self.conversionIndex, 1, QTableWidgetItem(strResult))
-        self.tbl_conversion.item(self.conversionIndex, 1).setFlags(Qt.ItemFlag.ItemIsEditable)
+        self.tbl_conversion.item(self.conversionIndex, 1).setFlags(
+            Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        )
         self.tbl_conversion.item(self.conversionIndex, 1).setForeground(QBrush(QColor(0, 0, 0)))
-        self.tbl_conversion.item(self.conversionIndex, 1).setFlags(Qt.ItemFlag.ItemIsEditable)
         self.tbl_conversion.item(self.conversionIndex, 1).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.conversionIndex = self.conversionIndex + 1
-        self.sendNextItemToConversion()
+
+        if wasCancelled:
+            for row in range(self.conversionIndex + 1, self.tbl_conversion.rowCount()):
+                self.tbl_conversion.removeCellWidget(row, 1)
+                self.tbl_conversion.setItem(row, 1, QTableWidgetItem("Stopped"))
+                self.tbl_conversion.item(row, 1).setFlags(
+                    Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                )
+                self.tbl_conversion.item(row, 1).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.startNextConversionAfterThread = False
+            self.conversionFinished()
+            return
+
+        self.conversionIndex += 1
+        self.startNextConversionAfterThread = self.conversionIndex < self.tbl_conversion.rowCount()
+        if not self.startNextConversionAfterThread:
+            self.conversionFinished()
 
     def sendNextItemToConversion(self):
         if(self.conversionIndex < self.tbl_conversion.rowCount()):
-            title = self.tbl_fileList.item(self.conversionIndex, GB._TITLECOLUMN_).text()
+            title = self.tbl_fileList.item(self.conversionIndex, GB._TITLECOLUMN_).text().strip()
             filePath = self.tbl_fileList.item(self.conversionIndex, GB._ORIGINALPATH_).text()
             bitRate = self.tbl_fileList.cellWidget(self.conversionIndex, GB._BITRATE_).currentText()
             fc = self.tbl_fileList.cellWidget(self.conversionIndex, GB._SAMPLERATE_).currentText()
             tags = self.tbl_fileList.item(self.conversionIndex, GB._HIDDENTAGS_).text()
 
-            conversionThread = ConversionThread(self, title, filePath, bitRate, fc, tags, self.entry_destinationPath.text())
-            conversionThread.result.connect(self.__slot__updateConversionProgress)
-            self.stopConversionSignal.connect(conversionThread.stopFn)
-            conversionThread.stopped.connect(self.__slot__conversionStopped)
-            conversionThread.start()
+            self.conversionThread = ConversionThread(self, title, filePath, bitRate, fc, tags, self.entry_destinationPath.text())
+            currentThread = self.conversionThread
+            currentThread.completed.connect(self.__slot__updateConversionProgress)
+            currentThread.finished.connect(lambda: self.__slot__conversionThreadFinished(currentThread))
+            currentThread.finished.connect(currentThread.deleteLater)
+            currentThread.start()
         else:
             self.conversionFinished()
 
-    # function that is called when the conversion is stopped
-    def __slot__conversionStopped(self):
-        # NON SI FERMA!
-        for row in range(self.tbl_conversion.rowCount()):
-            if(not(self.tbl_conversion.item(row, 1))):
-                self.tbl_conversion.removeCellWidget(row, 1)
-                self.tbl_conversion.setItem(row, 1, QTableWidgetItem("Stopped"))
-                self.tbl_conversion.item(row, 1).setFlags(Qt.ItemFlag.ItemIsEditable)
-                self.tbl_conversion.item(row, 1).setForeground(QBrush(QColor(0, 0, 0)))
-                self.tbl_conversion.item(row, 1).setFlags(Qt.ItemFlag.ItemIsEditable)
-                self.tbl_conversion.item(row, 1).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.conversionFinished()
+    def __slot__conversionThreadFinished(self, finishedThread):
+        if self.conversionThread is finishedThread:
+            self.conversionThread = None
+
+        if self.closeRequested:
+            QTimer.singleShot(0, self.close)
+            return
+
+        if self.startNextConversionAfterThread:
+            self.startNextConversionAfterThread = False
+            self.sendNextItemToConversion()
+            return
+
+        QTimer.singleShot(0, self.showPendingUpdate)
 
     def conversionFinished(self):
+        self.converting = False
         self.btn_stopConversion.hide()
-        #self.btn_clearQueue.hide()
         self.btn_done.setDisabled(False)
         self.btn_done.show()
 
@@ -397,8 +611,8 @@ class mainWindow(QWidget):
 
         self.tbl_conversion.hide()
         self.btn_addFile.setDisabled(False)
-        self.btn_clearList.setDisabled(False)
-        self.btn_convert.setDisabled(False)
+        self.btn_clearList.setDisabled(True)
+        self.btn_convert.setDisabled(True)
         self.btn_destinationPath.setDisabled(False)
         self.tbl_fileList.show()
         self.btn_done.hide()
@@ -406,15 +620,26 @@ class mainWindow(QWidget):
 
     # function that is called when the stop conversion button is clicked
     def __slot__stopConversion(self):
-        self.stopConversionSignal.emit()
+        if self.conversionThread is not None and self.conversionThread.isRunning():
+            self.btn_stopConversion.setDisabled(True)
+            self.conversionThread.cancel()
+            QTimer.singleShot(2000, self.__slot__forceStopConversion)
+
+    def __slot__forceStopConversion(self):
+        if self.conversionThread is not None and self.conversionThread.isRunning():
+            self.conversionThread.forceKill()
 
     # start a thread to add the files to the table
     def startThreadForAddingSongToList(self, file_list):
         if len(file_list) > 0:
-            loadThread = FileLoadThread(self, file_list, self.tbl_fileList.rowCount())
-            loadThread.data.connect(self.__slot__addToTable)
-            loadThread.finished.connect(self.__slot__addFilesFinished)
-            loadThread.start()
+            self.loadThread = FileLoadThread(self, file_list, self.tbl_fileList.rowCount())
+            currentThread = self.loadThread
+            currentThread.data.connect(self.__slot__addToTable)
+            currentThread.invalidFile.connect(self.__slot__invalidFile)
+            currentThread.completed.connect(self.__slot__addFilesFinished)
+            currentThread.finished.connect(lambda: self.__slot__loadThreadFinished(currentThread))
+            currentThread.finished.connect(currentThread.deleteLater)
+            currentThread.start()
 
             self.uploading = True
             self.progressBar.show()

@@ -1,67 +1,73 @@
-from PyQt6.QtCore import QThread
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal
 from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
-import pathlib
+
 import json
+import pathlib
 import re
+
 from audioFileDuration import get_duration
 import globalVariables as GB
 
+
 class FileLoadThread(QThread):
-    finished = pyqtSignal()
+    completed = pyqtSignal()
     data = pyqtSignal(int, int, str)
+    invalidFile = pyqtSignal(str)
 
     def __init__(self, parent, files, lastRowIndex):
         super().__init__(parent=parent)
         self.files = files
         self.lastRowIndex = lastRowIndex
+        self.cancelRequested = False
+
+    def cancel(self):
+        self.cancelRequested = True
 
     def run(self):
-        current_row = self.lastRowIndex                                      # redundant, but useful for clarity
+        currentRow = self.lastRowIndex
 
         for file in self.files:
+            if self.cancelRequested:
+                break
 
-            # TITLE
-            title = pathlib.Path(file).stem                                  # get the file name without extension
-            self.data.emit(current_row, GB._TITLECOLUMN_, title)
+            try:
+                title = pathlib.Path(file).stem
+                timeString = get_duration(file)
+                fileFormat = pathlib.Path(file).suffix.lstrip(".").lower()
+                tags = {
+                    "title": title,
+                    "number": "",
+                    "artist": "",
+                    "album": "",
+                    "year": "",
+                    "genre": "",
+                }
 
-            # LENGTH
-            time_string = get_duration(file)
-            self.data.emit(current_row, GB._LENGTHCOLUMN_, time_string)
+                if fileFormat == "mp3":
+                    audio = MP3(file, ID3=EasyID3)
+                    tagTitle = ", ".join(audio.get("title", [""]))
+                    if tagTitle:
+                        tags["title"] = tagTitle
+                    tags["number"] = ", ".join(audio.get("tracknumber", [""]))
+                    tags["artist"] = ", ".join(audio.get("artist", [""]))
+                    tags["album"] = ", ".join(audio.get("album", [""]))
+                    tags["year"] = ", ".join(audio.get("date", [""]))
+                    tags["genre"] = ", ".join(audio.get("genre", [""]))
+                elif re.match(r"^\d{2}\s", title):
+                    tags["number"] = title[:2]
 
-            # FORMAT
-            format = pathlib.Path(file).suffix                               # get the file extension
-            format = format.split(".")                                       # split the string to remove the dot
-            format = format[1]
-            self.data.emit(current_row, GB._ORIGINALFORMAT_, format)
+                rowData = {
+                    GB._TITLECOLUMN_: title,
+                    GB._LENGTHCOLUMN_: timeString,
+                    GB._ORIGINALFORMAT_: fileFormat,
+                    GB._ORIGINALPATH_: file,
+                    GB._HIDDENTAGS_: json.dumps(tags),
+                }
+                for column, value in rowData.items():
+                    self.data.emit(currentRow, column, value)
+                currentRow += 1
+            except Exception:
+                self.invalidFile.emit(file)
 
-            # ORIGINAL PATH
-            self.data.emit(current_row, GB._ORIGINALPATH_, file)
-
-            # HIDDEN TAGS
-            tags = {"title": title, "number": "", "artist": "", "album": "", "year": "", "genre": ""}
-            
-            if(format != "mp3"):
-                if re.match(r'^\d{2}\s', tags["title"]):                     # check if the title starts with two digits followed by a space
-                    tags["number"] = tags["title"][:2]                       # if it does, set the number tag to the first two digits
-            else:
-
-                #MUTAGEN VERSION OF GETTING TAGS FROM MP3
-                audio = MP3(file, ID3=EasyID3)
-                tagTitle = ", ".join(audio.get("title", [""]))               # get the tag "title"
-
-                if tagTitle != "":
-                    tags["title"] = tagTitle
-
-                tags["number"] = ", ".join(audio.get("tracknumber", [""]))   # get the tag "tracknumber"
-                tags["artist"] = ", ".join(audio.get("artist", [""]))        # get the tag "artist"
-                tags["album"] = ", ".join(audio.get("album", [""]))          # get the tag "album"
-                tags["year"] = ", ".join(audio.get("date", [""]))            # get the tag "date"
-                tags["genre"] = ", ".join(audio.get("genre", [""]))          # get the tag "genre"
-
-            json_tags = json.dumps(tags)
-            self.data.emit(current_row, GB._HIDDENTAGS_, json_tags)
-            current_row = current_row + 1
-    
-        self.finished.emit()
+        self.completed.emit()

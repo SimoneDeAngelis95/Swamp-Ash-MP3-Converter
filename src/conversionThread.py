@@ -1,15 +1,15 @@
-from PyQt6.QtCore import QThread
-from PyQt6.QtCore import pyqtSignal
-import globalVariables as GB
-import subprocess
-import platform
-import os
+from PyQt6.QtCore import QThread, pyqtSignal
+
 import json
+import os
+import platform
+import subprocess
+
+import globalVariables as GB
+
 
 class ConversionThread(QThread):
-    finished = pyqtSignal()
-    result = pyqtSignal(bool)
-    stopped = pyqtSignal()
+    completed = pyqtSignal(bool, bool)
 
     def __init__(self, parent, title, filePath, bitRate, fc, tags, outputPath):
         super().__init__(parent=parent)
@@ -19,23 +19,43 @@ class ConversionThread(QThread):
         self.fc = fc
         self.tags = json.loads(tags)
         self.outputPath = outputPath
-        self.stop = False
+        self.process = None
+        self.cancelRequested = False
+        self.outputFile = None
+
+    def cancel(self):
+        self.cancelRequested = True
+        if self.process is not None and self.process.poll() is None:
+            try:
+                self.process.terminate()
+            except OSError:
+                pass
+
+    def forceKill(self):
+        if self.process is not None and self.process.poll() is None:
+            try:
+                self.process.kill()
+            except OSError:
+                pass
+
+    def _removePartialOutput(self):
+        if self.outputFile and os.path.isfile(self.outputFile):
+            try:
+                os.remove(self.outputFile)
+            except OSError:
+                pass
 
     def run(self):
-
-        # Manage output path and filename
-        outPath = self.outputPath + "/" + self.title
+        outPath = os.path.join(self.outputPath, self.title)
         if os.path.exists(outPath + ".mp3"):
-            index = 0
-            postFix = ""
-            while os.path.exists(outPath + postFix + ".mp3"):
+            index = 1
+            while os.path.exists(f"{outPath} ({index}).mp3"):
                 index += 1
-                postFix = " (" + str(index) + ")"
-            outPath = self.outputPath + "/" + self.title + postFix
-        outPath += ".mp3"
+            outPath = f"{outPath} ({index})"
+        self.outputFile = outPath + ".mp3"
 
         try:
-            bitRate = self.bitRate[:3] + "k"
+            bitRate = self.bitRate.split()[0] + "k"
             cmd = [
                 GB._FFMPEG_PATH_,
                 "-i", self.filePath,
@@ -47,27 +67,29 @@ class ConversionThread(QThread):
                 "-metadata", "album=" + self.tags["album"],
                 "-metadata", "Date=" + self.tags["year"],
                 "-metadata", "genre=" + self.tags["genre"],
-                outPath
+                self.outputFile,
             ]
 
-            if platform.system() == 'Darwin' or platform.system() == 'Linux':
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            elif platform.system() == 'Windows':
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW) # creationflags=subprocess.CREATE_NO_WINDOW needed to avoid opening a console window on Windows, not needed on Linux or MacOS
-            
-            while process.poll() is None:
-                if self.stop == True:
-                    process.terminate()
-                    os.remove(outPath)
-                    self.stopped.emit()
-                    break
-            
-            if self.stop == False:
-                self.result.emit(True)
-        except:                               # in case of error in subprocess execution, we catch the exception
-            self.result.emit(False)
+            processOptions = {
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            if platform.system() == "Windows":
+                processOptions["creationflags"] = subprocess.CREATE_NO_WINDOW
 
-        self.finished.emit()
+            self.process = subprocess.Popen(cmd, **processOptions)
+            if self.cancelRequested:
+                self.cancel()
 
-    def stopFn(self):
-        self.stop = True
+            returnCode = self.process.wait()
+            wasCancelled = self.cancelRequested
+            success = returnCode == 0 and not wasCancelled
+
+            if not success:
+                self._removePartialOutput()
+            self.completed.emit(success, wasCancelled)
+        except Exception:
+            self._removePartialOutput()
+            self.completed.emit(False, self.cancelRequested)
+        finally:
+            self.process = None

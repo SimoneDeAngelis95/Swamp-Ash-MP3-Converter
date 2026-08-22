@@ -2,7 +2,7 @@ import os
 import platform
 
 _APP_NAME_ = "Swamp Ash MP3 Converter"
-_APP_VERSION_ = "V1.2.0"
+_APP_VERSION_ = "1.3.12"
 
 if platform.system() == 'Darwin' or platform.system() == 'Linux':
     _DEFAULT_EXPORT_PATH_ = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop')

@@ -37,8 +37,8 @@ def get_duration_wav(file):
         with wave.open(file, 'rb') as audio:
             duration_seconds = audio.getnframes() / float(audio.getframerate())
             return format_duration(duration_seconds)
-    except Exception as e:
-        return "N.A."
+    except Exception as exc:
+        raise ValueError("Invalid WAV file") from exc
 
 def get_duration_aac(file):
     audio = AAC(file)

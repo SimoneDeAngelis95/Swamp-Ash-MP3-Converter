@@ -7,7 +7,7 @@ To create a macOS app bundle using py2app, run the following command in the term
     - This will generate a .app bundle in the 'dist' directory.
 This script is used to package a Python application into a macOS app bundle using py2app.
 
-This setup works with macOS silicon and intel architectures.
+This setup targets Apple Silicon Macs.
 """
 # =====================================================================
 def add_src_prefix(path): # helper function to add 'src/' prefix to paths
@@ -26,13 +26,14 @@ DATA_FILES = [
 ]
 
 OPTIONS = {
+    'arch': 'arm64',
     'iconfile': add_src_prefix(GV._ICON_IMG_PATH_),
     'plist':{
         'CFBundleName': GV._APP_NAME_,
         'CFBundleVersion': GV._APP_VERSION_,
         'CFBundleShortVersionString': GV._APP_VERSION_, 
         'CFBundleExecutable': GV._APP_NAME_,
-        'NSHumanReadableCopyright': '© 2024-2025 Made with Love by Simone De Angelis',
+        'NSHumanReadableCopyright': '© 2024-2026 Made with Love by Simone De Angelis',
         'CFBundleIdentifier': 'com.simonedeamelis.swampashmp3converter',               # Unique identifier for the app
         'LSApplicationCategoryType': 'public.app-category.utilities',                  # Application category
         'NSHighResolutionCapable': True,                                               # Support for high-resolution displays
